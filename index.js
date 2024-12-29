@@ -48,6 +48,9 @@ require("./config/passport");
 connectDB();
 
 // Routes
+app.get("/", (req, res) => {
+  res.send("Welcome to the authentication API");
+});
 app.use("/api/auth", routes);
 
 // Error handling middleware
