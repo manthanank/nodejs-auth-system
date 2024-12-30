@@ -75,7 +75,7 @@ const register = async (req, res) => {
     const verificationToken = user.generateVerificationToken();
     await user.save();
 
-    const verificationUrl = `http://localhost:4200/verify-email/${verificationToken}`;
+    const verificationUrl = `${req.protocol}://${req.get('host')}/verify-email/${verificationToken}`;
 
     await sendEmail(
       user.email,
