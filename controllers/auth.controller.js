@@ -71,7 +71,7 @@ const register = async (req, res) => {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    const user = new User({ email, password });
+    const user = new User({ email, password, mre: email });
     const verificationToken = user.generateVerificationToken();
     await user.save();
 
@@ -228,6 +228,61 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const resendVerificationEmail = async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.body.email });
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ message: "Email is already verified" });
+    }
+
+    const verificationToken = user.generateVerificationToken();
+    await user.save();
+
+    const verificationUrl = `${req.protocol}://${req.get(
+      "host"
+    )}/api/auth/verify-email/${verificationToken}`;
+
+    await sendEmail(
+      user.email,
+      "Email Verification",
+      `Please click on the link to verify your email: ${verificationUrl}`
+    );
+
+    log(`Verification email resent to: ${user.email}`);
+    return res.status(200).json({ message: "Verification email resent" });
+  } catch (err) {
+    error(`Error resending verification email: ${err.message}`);
+    return res.status(500).json({ message: "Error resending verification email" });
+  }
+};
+
+const changePassword = async (req, res) => {
+  try {
+    const { error: validationError } = resetPasswordSchema.validate(req.body);
+    if (validationError) {
+      return res.status(400).json({ message: validationError.details[0].message });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    user.password = req.body.password;
+    await user.save();
+
+    log(`Password changed successfully for: ${user.email}`);
+    return res.status(200).json({ message: "Password changed successfully" });
+  } catch (err) {
+    error(`Error changing password: ${err.message}`);
+    return res.status(500).json({ message: "Error changing password" });
+  }
+};
+
 const updateProfile = async (req, res) => {
   const { error: validationError } = profileSchema.validate(req.body);
   if (validationError) {
@@ -240,6 +295,8 @@ const updateProfile = async (req, res) => {
     const user = await User.findByIdAndUpdate(req.user.id, req.body, {
       new: true,
     }).select("-password");
+    user.mre = req.body.email;
+    await user.save();
     log(`Profile updated successfully: ${user.email}`);
     const userProfile = user.toObject();
     return res.status(200).json(userProfile);
@@ -263,6 +320,21 @@ const logout = async (req, res) => {
   }
 };
 
+const deleteAccount = async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.user.id);
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    log(`Account deleted successfully: ${user.email}`);
+    return res.status(200).json({ message: "Account deleted successfully" });
+  } catch (err) {
+    error(`Error deleting account: ${err.message}`);
+    return res.status(500).json({ message: "Error deleting account" });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -272,5 +344,8 @@ module.exports = {
   resetPassword,
   getProfile,
   updateProfile,
+  resendVerificationEmail,
+  changePassword,
+  deleteAccount,
   logout,
 };

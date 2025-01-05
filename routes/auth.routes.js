@@ -7,6 +7,9 @@ const {
   getProfile,
   verifyEmail,
   refreshToken,
+  resendVerificationEmail,
+  changePassword,
+  deleteAccount,
   updateProfile,
   logout,
 } = require("../controllers/auth.controller");
@@ -31,6 +34,17 @@ router.post("/forgot-password", forgotPassword);
 router.put("/reset-password/:token", resetPassword);
 router.get("/verify-email/:token", verifyEmail);
 router.post("/refresh-token", refreshToken);
+router.post("/resend-verification-email", resendVerificationEmail);
+router.put(
+  "/change-password",
+  passport.authenticate("jwt", { session: false }),
+  changePassword
+);
+router.delete(
+  "/delete-account",
+  passport.authenticate("jwt", { session: false }),
+  deleteAccount
+);
 router.get(
   "/user",
   passport.authenticate("jwt", { session: false }),

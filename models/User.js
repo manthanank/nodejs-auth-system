@@ -18,6 +18,7 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     verificationToken: String,
     refreshToken: String,
+    mre: { type: String, default: "" }, // Most Recent Email
   },
   { timestamps: true }
 );
