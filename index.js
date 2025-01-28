@@ -13,6 +13,7 @@ const routes = require("./routes/auth.routes");
 const passport = require("passport");
 const errorHandler = require("./middlewares/errorHandler");
 const { log } = require("./utils/logger");
+const { swaggerUi, specs } = require("./config/swagger");
 
 dotenv.config();
 const app = express();
@@ -52,6 +53,9 @@ app.get("/", (req, res) => {
   res.send("Welcome to the authentication API");
 });
 app.use("/api/auth", routes);
+
+// Swagger setup
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 // Error handling middleware
 app.use(errorHandler);

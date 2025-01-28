@@ -3,7 +3,7 @@ require("dotenv").config();
 const { log, error: logError } = require("../utils/logger");
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  service: process.env.SMTP_SERVICE,
   auth: {
     user: process.env.SMTP_MAIL,
     pass: process.env.SMTP_APP_PASS,
@@ -19,7 +19,7 @@ const sendEmail = async (email, subject, content) => {
   };
 
   try {
-    console.log(mailOptions);
+    log(mailOptions);
     await transporter.sendMail(mailOptions);
     log(`Email sent to ${email}`);
   } catch (err) {

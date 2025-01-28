@@ -9,6 +9,7 @@ const {
   profileSchema,
 } = require("../validations/auth.validation");
 const { sendEmail } = require("../utils/email");
+const { detectDevice } = require("../utils/device.util");
 
 const login = async (req, res) => {
   try {
@@ -45,6 +46,13 @@ const login = async (req, res) => {
     await user.save();
 
     const token = generateToken({ id: user._id }, "1h");
+
+    // Detect device
+    const deviceInfo = detectDevice(req);
+    const deviceMessage = `Login detected from a new device: ${deviceInfo}`;
+
+    // Send email notification
+    await sendEmail(user.email, "New Device Login Detected", deviceMessage);
 
     log(`User logged in successfully: ${email}`);
     return res.status(200).json({ token: token, refreshToken: refreshToken, role: user.role, expiresIn: 3600 });
@@ -95,12 +103,10 @@ const verifyEmail = async (req, res) => {
   try {
     const { token } = req.params;
     const hashedToken = User.getResetPasswordHash(token);
-    console.log(hashedToken);
 
     const user = await User.findOne({
       verificationToken: hashedToken,
     });
-    console.log(user);
 
     if (!user) {
       return res.status(400).json({ message: "Invalid or expired token" });
@@ -335,6 +341,25 @@ const deleteAccount = async (req, res) => {
   }
 };
 
+const socialLogin = async (req, res) => {
+  try {
+    const { user } = req;
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+
+    const token = generateToken({ id: user._id }, "1h");
+    const refreshToken = user.generateRefreshToken();
+    await user.save();
+
+    log(`User logged in via social login: ${user.email}`);
+    return res.status(200).json({ token, refreshToken, role: user.role, expiresIn: 3600 });
+  } catch (err) {
+    error(`Error during social login: ${err.message}`);
+    return res.status(500).json({ message: "Error during social login" });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -342,6 +367,7 @@ module.exports = {
   refreshToken,
   forgotPassword,
   resetPassword,
+  socialLogin,
   getProfile,
   updateProfile,
   resendVerificationEmail,
