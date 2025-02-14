@@ -19,6 +19,10 @@ const userSchema = new mongoose.Schema(
     verificationToken: String,
     refreshToken: String,
     mre: { type: String, default: "" }, // Most Recent Email
+    activeSession: {
+      deviceId: String,
+      lastActive: Date
+    }
   },
   { timestamps: true }
 );

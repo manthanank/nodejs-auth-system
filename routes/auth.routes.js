@@ -16,6 +16,7 @@ const {
 } = require("../controllers/auth.controller");
 const passport = require("passport");
 const roleMiddleware = require("../middlewares/roleMiddleware");
+const sessionMiddleware = require('../middlewares/sessionMiddleware');
 
 const router = express.Router();
 
@@ -88,6 +89,7 @@ router.post("/login", login);
 router.get(
   "/profile",
   passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
   getProfile
 );
 
@@ -119,6 +121,7 @@ router.get(
 router.put(
   "/profile",
   passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
   updateProfile
 );
 
@@ -280,6 +283,7 @@ router.post("/resend-verification-email", resendVerificationEmail);
 router.put(
   "/change-password",
   passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
   changePassword
 );
 
@@ -302,6 +306,7 @@ router.put(
 router.delete(
   "/delete-account",
   passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
   deleteAccount
 );
 
@@ -322,6 +327,7 @@ router.delete(
 router.get(
   "/user",
   passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
   roleMiddleware(["user"]),
   (req, res) => {
     res.status(200).json({ message: "Welcome, user!" });
@@ -345,6 +351,7 @@ router.get(
 router.get(
   "/admin",
   passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
   roleMiddleware(["admin"]),
   (req, res) => {
     res.status(200).json({ message: "Welcome, admin!" });
@@ -368,6 +375,7 @@ router.get(
 router.post(
   "/logout",
   passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
   logout
 );
 

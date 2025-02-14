@@ -10,6 +10,7 @@ const {
 } = require("../validations/auth.validation");
 const { sendEmail } = require("../utils/email");
 const { detectDevice } = require("../utils/device.util");
+const { v4: uuidv4 } = require('uuid');
 
 const login = async (req, res) => {
   try {
@@ -40,6 +41,21 @@ const login = async (req, res) => {
         .json({ message: "Email not verified. Check your inbox." });
     }
 
+    const deviceId = req.headers['device-id'] || uuidv4();
+
+    // Check for existing active session
+    if (user.activeSession && user.activeSession.deviceId !== deviceId) {
+      return res.status(401).json({ 
+        message: 'Another session is active. Please logout from other devices first.'
+      });
+    }
+
+    // Update active session
+    user.activeSession = {
+      deviceId: deviceId,
+      lastActive: new Date()
+    };
+
     user.loginAttempts = 0;
     user.lockUntil = undefined;
     const refreshToken = user.generateRefreshToken();
@@ -56,7 +72,13 @@ const login = async (req, res) => {
     await sendEmail(user.email, "New Device Login Detected", deviceMessage);
 
     log(`User logged in successfully: ${email}`);
-    return res.status(200).json({ token: token, refreshToken: refreshToken, role: user.role, expiresIn: 3600 });
+    return res.status(200).json({ 
+      token, 
+      refreshToken, 
+      role: user.role, 
+      expiresIn: 3600,
+      deviceId // Send device ID to client
+    });
   } catch (err) {
     error(`Error logging in: ${err.message}`);
     return res.status(500).json({ message: "Error logging in" });
