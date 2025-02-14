@@ -43,6 +43,7 @@ const login = async (req, res) => {
     user.loginAttempts = 0;
     user.lockUntil = undefined;
     const refreshToken = user.generateRefreshToken();
+    user.refreshToken = refreshToken; // Store the new refresh token
     await user.save();
 
     const token = generateToken({ id: user._id }, "1h");
@@ -136,6 +137,7 @@ const refreshToken = async (req, res) => {
 
     const newAuthToken = generateToken({ id: user._id }, "1h");
     const newRefreshToken = user.generateRefreshToken();
+    user.refreshToken = newRefreshToken; // Store the new refresh token
     await user.save();
 
     return res
