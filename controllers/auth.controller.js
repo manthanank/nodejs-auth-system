@@ -50,6 +50,18 @@ const login = async (req, res) => {
       });
     }
 
+    // Check for maximum device limit
+    if (user.activeSessions && user.activeSessions.length >= 4) {
+      return res.status(401).json({ 
+        message: 'Maximum device limit reached. Please logout from another device.',
+        currentSessions: user.activeSessions.map(session => ({
+          deviceId: session.deviceId,
+          userAgent: session.userAgent,
+          lastActive: session.lastActive
+        }))
+      });
+    }
+
     // Update active session
     user.activeSession = {
       deviceId: deviceId,
@@ -339,14 +351,37 @@ const updateProfile = async (req, res) => {
 const logout = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    user.refreshToken = undefined;
-    await user.save();
-    log(`User logged out successfully: ${user.email}`);
+    const deviceId = req.deviceId;
 
-    return res.status(200).json({ message: "User logged out successfully" });
+    // Remove the specific session
+    user.activeSessions = user.activeSessions.filter(
+      session => session.deviceId !== deviceId
+    );
+    
+    await user.save();
+    log(`User logged out from device ${deviceId}: ${user.email}`);
+
+    return res.status(200).json({ 
+      message: "Successfully logged out from current device",
+      remainingSessions: user.activeSessions.length
+    });
   } catch (err) {
     error(`Error logging out: ${err.message}`);
     return res.status(500).json({ message: "Error logging out" });
+  }
+};
+
+const logoutAll = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    user.activeSessions = [];
+    await user.save();
+    
+    log(`User logged out from all devices: ${user.email}`);
+    return res.status(200).json({ message: "Successfully logged out from all devices" });
+  } catch (err) {
+    error(`Error logging out from all devices: ${err.message}`);
+    return res.status(500).json({ message: "Error logging out from all devices" });
   }
 };
 
@@ -398,4 +433,5 @@ module.exports = {
   changePassword,
   deleteAccount,
   logout,
+  logoutAll,
 };

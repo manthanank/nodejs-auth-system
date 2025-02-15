@@ -12,6 +12,7 @@ const {
   deleteAccount,
   updateProfile,
   logout,
+  logoutAll,
   socialLogin,
 } = require("../controllers/auth.controller");
 const passport = require("passport");
@@ -377,6 +378,27 @@ router.post(
   passport.authenticate("jwt", { session: false }),
   sessionMiddleware,
   logout
+);
+
+/**
+ * @swagger
+ * /api/auth/logout-all:
+ *   post:
+ *     summary: Logout user from all devices
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User logged out from all devices successfully
+ *       500:
+ *         description: Error logging out from all devices
+ */
+router.post(
+  "/logout-all",
+  passport.authenticate("jwt", { session: false }),
+  sessionMiddleware,
+  logoutAll
 );
 
 router.get(
