@@ -1,8 +1,8 @@
 const swaggerJsdoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
 
-// Updated CDN URL with reliable MIME type delivery
-const CSS_URL = "https://unpkg.com/swagger-ui-dist@4.5.0/swagger-ui.css";
+// Use CDN URL that properly serves CSS with correct MIME type
+const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.11.0/swagger-ui.min.css";
 
 const options = {
   definition: {
