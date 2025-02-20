@@ -13,9 +13,26 @@ const jwtOptions = {
 
 const jwtStrategy = new JwtStrategy(jwtOptions, async (jwtPayload, done) => {
   try {
+    // Check token expiration
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    if (jwtPayload.exp && jwtPayload.exp < currentTimestamp) {
+      return done(null, false, { message: "Token expired" });
+    }
+
+    // If token is not expired, verify user
     const user = await User.findById(jwtPayload.id);
-    if (user) return done(null, user);
-    return done(null, false);
+    if (!user) {
+      return done(null, false, { message: "User not found" });
+    }
+
+    // Clean up expired sessions (older than 24 hours)
+    const now = new Date();
+    user.activeSessions = user.activeSessions.filter(session => 
+      new Date(session.lastActive).getTime() > now.getTime() - (24 * 60 * 60 * 1000)
+    );
+    await user.save();
+
+    return done(null, user);
   } catch (err) {
     return done(err, false);
   }

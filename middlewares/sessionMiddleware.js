@@ -1,46 +1,48 @@
-const { v4: uuidv4 } = require('uuid');
 const User = require('../models/User');
-
-const MAX_SESSIONS = 4;
+const BlacklistedToken = require('../models/BlacklistedToken');
 
 const sessionMiddleware = async (req, res, next) => {
   try {
-    const currentDeviceId = req.headers['device-id'] || uuidv4();
-    const userAgent = req.headers['user-agent'];
+    // Check if token is blacklisted first
+    const token = req.headers.authorization?.split(" ")[1];
+    const isBlacklisted = await BlacklistedToken.findOne({ token });
+    if (isBlacklisted) {
+      return res.status(401).json({ 
+        message: "Session is no longer valid",
+        code: "INVALID_SESSION"
+      });
+    }
+
+    const currentDeviceId = req.headers['device-id'] || req.cookies['device-id'];
+    if (!currentDeviceId) {
+      return res.status(401).json({ message: "Device ID required" });
+    }
+
     const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
-    // Remove expired sessions (older than 24 hours)
-    user.activeSessions = user.activeSessions.filter(session => 
-      session.lastActive > Date.now() - (24 * 60 * 60 * 1000)
-    );
-
-    // Check if current device has an existing session
-    const existingSession = user.activeSessions.find(
+    // Check if device has an active session
+    const hasActiveSession = user.activeSessions?.some(
       session => session.deviceId === currentDeviceId
     );
 
-    if (existingSession) {
-      // Update last active time for existing session
-      existingSession.lastActive = new Date();
-    } else {
-      // Check if max sessions limit reached
-      if (user.activeSessions.length >= MAX_SESSIONS) {
-        return res.status(401).json({
-          message: 'Maximum device limit reached. Please logout from another device.',
-          currentSessions: user.activeSessions.map(session => ({
-            deviceId: session.deviceId,
-            userAgent: session.userAgent,
-            lastActive: session.lastActive
-          }))
-        });
-      }
-
-      // Add new session
-      user.activeSessions.push({
-        deviceId: currentDeviceId,
-        lastActive: new Date(),
-        userAgent
+    if (!hasActiveSession) {
+      return res.status(401).json({ 
+        message: "No active session found for this device",
+        code: "INVALID_SESSION"
       });
+    }
+
+    // Update lastActive for existing session
+    if (Array.isArray(user.activeSessions)) {
+      const sessionIndex = user.activeSessions.findIndex(
+        session => session.deviceId === currentDeviceId
+      );
+      if (sessionIndex >= 0) {
+        user.activeSessions[sessionIndex].lastActive = new Date();
+      }
     }
 
     await user.save();

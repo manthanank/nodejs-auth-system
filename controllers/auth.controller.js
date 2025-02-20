@@ -9,8 +9,10 @@ const {
   profileSchema,
 } = require("../validations/auth.validation");
 const { sendEmail } = require("../utils/email");
-const { detectDevice } = require("../utils/device.util");
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require("uuid");
+const BlacklistedToken = require("../models/BlacklistedToken");
+const jwt = require("jsonwebtoken");
+const { JWT_SECRET } = require("../config/env");
 
 const login = async (req, res) => {
   try {
@@ -22,74 +24,169 @@ const login = async (req, res) => {
     }
 
     const { email, password } = req.body;
-
     const user = await User.findOne({ email });
-    if (!user || !(await user.comparePassword(password))) {
-      log(`Login attempt failed: Invalid credentials for ${email}`);
-      return res.status(400).json({ message: "Invalid credentials" });
+
+    // Clean up expired sessions first
+    if (Array.isArray(user.activeSessions)) {
+      user.activeSessions = user.activeSessions.filter(
+        (session) =>
+          new Date(session.lastActive) >
+          new Date(Date.now() - 24 * 60 * 60 * 1000)
+      );
     }
 
-    if (user.isLocked) {
-      log(`Login attempt failed: Account locked for ${email}`);
-      return res.status(403).json({ message: "Account locked" });
+    // Handle force logout if specified
+    const forceLogoutDeviceId = req.headers["force-logout"];
+    if (forceLogoutDeviceId && user.activeSessions.length >= 4) {
+      user.activeSessions = user.activeSessions.filter(
+        (session) => session.deviceId !== forceLogoutDeviceId
+      );
+      await user.save();
     }
 
-    if (!user.isVerified) {
-      log(`Login attempt failed: Email not verified for ${email}`);
-      return res
-        .status(400)
-        .json({ message: "Email not verified. Check your inbox." });
-    }
-
-    const deviceId = req.headers['device-id'] || uuidv4();
-
-    // Check for existing active session
-    if (user.activeSession && user.activeSession.deviceId !== deviceId) {
-      return res.status(401).json({ 
-        message: 'Another session is active. Please logout from other devices first.'
+    // Check max sessions after potential force logout
+    if (Array.isArray(user.activeSessions) && user.activeSessions.length >= 4) {
+      return res.status(403).json({
+        message:
+          "Maximum device limit reached. Please logout from another device.",
+        activeSessions: user.activeSessions,
+        code: "MAX_SESSIONS",
       });
     }
 
-    // Check for maximum device limit
-    if (user.activeSessions && user.activeSessions.length >= 4) {
-      return res.status(401).json({ 
-        message: 'Maximum device limit reached. Please logout from another device.',
-        currentSessions: user.activeSessions.map(session => ({
-          deviceId: session.deviceId,
-          userAgent: session.userAgent,
-          lastActive: session.lastActive
-        }))
+    // Existing validations...
+
+    const deviceId = req.headers["device-id"] || uuidv4();
+    const userAgent = req.headers["user-agent"];
+
+    // Handle session management...
+    if (!Array.isArray(user.activeSessions)) {
+      user.activeSessions = [];
+    }
+
+    const sessionIndex = user.activeSessions.findIndex(
+      (session) => session.deviceId === deviceId
+    );
+
+    if (sessionIndex >= 0) {
+      user.activeSessions[sessionIndex].lastActive = new Date();
+      user.activeSessions[sessionIndex].userAgent = userAgent;
+    } else {
+      user.activeSessions.push({
+        deviceId,
+        lastActive: new Date(),
+        userAgent,
       });
     }
 
-    // Update active session
-    user.activeSession = {
-      deviceId: deviceId,
-      lastActive: new Date()
-    };
-
+    // Update user and generate tokens...
     user.loginAttempts = 0;
     user.lockUntil = undefined;
     const refreshToken = user.generateRefreshToken();
-    user.refreshToken = refreshToken; // Store the new refresh token
     await user.save();
 
     const token = generateToken({ id: user._id }, "1h");
 
-    // Detect device
-    const deviceInfo = detectDevice(req);
-    const deviceMessage = `Login detected from a new device: ${deviceInfo}`;
+    // Send login notification email
+    const emailContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    .email-container {
+                        font-family: Arial, sans-serif;
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #f4f4f4;
+                    }
+                    .header {
+                        background-color: #dc3545;
+                        color: white;
+                        padding: 20px;
+                        text-align: center;
+                        border-radius: 5px 5px 0 0;
+                    }
+                    .content {
+                        background-color: white;
+                        padding: 30px;
+                        border-radius: 0 0 5px 5px;
+                    }
+                    .device-details {
+                        background-color: #f8f9fa;
+                        padding: 15px;
+                        border-radius: 5px;
+                        margin: 20px 0;
+                    }
+                    .warning-button {
+                        display: inline-block;
+                        padding: 15px 25px;
+                        background-color: #dc3545;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        margin-top: 20px;
+                        text-align: center;
+                    }
+                    .warning-button a {
+                        color: white;
+                        text-decoration: none;
+                    }
+                    .footer {
+                        text-align: center;
+                        margin-top: 30px;
+                        color: #777;
+                        font-size: 12px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="email-container">
+                    <div class="header">
+                        <h1>New Login Alert</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Dear User,</h2>
+                        <p>We detected a new login to your account. Here are the details:</p>
+                        
+                        <div class="device-details">
+                            <h3>Device Information</h3>
+                            <p><strong>Browser/Device:</strong> ${userAgent}</p>
+                            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+                        </div>
+    
+                        <p><strong>Was this you?</strong></p>
+                        <p>If you don't recognize this activity, your account security may be at risk.</p>
+                        
+                        <center>
+                            <div class="warning-button">
+                                <a href="${
+                                  process.env.FRONTEND_URL
+                                }/change-password">Secure Your Account</a>
+                            </div>
+                        </center>
+    
+                        <p style="margin-top: 20px;">If this was you, you can safely ignore this email.</p>
+                    </div>
+                    <div class="footer">
+                        <p>This is an automated security notification</p>
+                        <p>© ${new Date().getFullYear()} Your App Name. All rights reserved.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+    `;
 
-    // Send email notification
-    await sendEmail(user.email, "New Device Login Detected", deviceMessage);
+    await sendEmail(user.email, "New Login Alert", emailContent);
 
-    log(`User logged in successfully: ${email}`);
-    return res.status(200).json({ 
-      token, 
-      refreshToken, 
-      role: user.role, 
+    log(`User logged in successfully and notification sent: ${email}`);
+    return res.status(200).json({
+      token,
+      refreshToken,
+      role: user.role,
       expiresIn: 3600,
-      deviceId // Send device ID to client
+      deviceId,
+      activeSessions: user.activeSessions,
     });
   } catch (err) {
     error(`Error logging in: ${err.message}`);
@@ -101,9 +198,7 @@ const register = async (req, res) => {
   try {
     const { error: validationError } = registerSchema.validate(req.body);
     if (validationError) {
-      return res
-        .status(400)
-        .json({ message: validationError.details[0].message });
+      return res.status(400).json({ message: validationError.details[0].message });
     }
 
     const { email, password } = req.body;
@@ -118,13 +213,128 @@ const register = async (req, res) => {
     const verificationToken = user.generateVerificationToken();
     await user.save();
 
-    const verificationUrl = `${req.protocol}://${req.get('host')}/verify-email/${verificationToken}`;
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
 
-    await sendEmail(
-      user.email,
-      "Email Verification",
-      `Please click on the link to verify your email: ${verificationUrl}`
-    );
+    // Welcome email template
+    const emailContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            .email-container {
+                font-family: Arial, sans-serif;
+                max-width: 600px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: #f4f4f4;
+            }
+            .header {
+                background-color: #4CAF50;
+                color: white;
+                padding: 20px;
+                text-align: center;
+                border-radius: 5px 5px 0 0;
+            }
+            .content {
+                background-color: white;
+                padding: 30px;
+                border-radius: 0 0 5px 5px;
+            }
+            .welcome-image {
+                width: 100%;
+                max-width: 300px;
+                margin: 20px auto;
+                display: block;
+            }
+            .button {
+                display: inline-block;
+                padding: 15px 25px;
+                background-color: #4CAF50;
+                color: white;
+                text-decoration: none;
+                border-radius: 5px;
+                margin-top: 20px;
+            }
+            .features {
+                margin: 20px 0;
+                padding: 20px;
+                background-color: #f9f9f9;
+                border-radius: 5px;
+            }
+            .feature-item {
+                margin: 10px 0;
+                padding-left: 20px;
+                position: relative;
+            }
+            .feature-item:before {
+                content: "✓";
+                color: #4CAF50;
+                position: absolute;
+                left: 0;
+            }
+            .footer {
+                text-align: center;
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid #eee;
+                color: #666;
+            }
+            .social-links {
+                margin: 20px 0;
+            }
+            .social-links a {
+                margin: 0 10px;
+                color: #4CAF50;
+                text-decoration: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="email-container">
+            <div class="header">
+                <h1>Welcome to Our Platform!</h1>
+            </div>
+            <div class="content">
+                <h2>Hi ${email},</h2>
+                <p>Thank you for joining us! We're excited to have you as a member of our community.</p>
+                
+                <div class="features">
+                    <h3>What you can do with your account:</h3>
+                    <div class="feature-item">Access secure authentication</div>
+                    <div class="feature-item">Manage multiple sessions</div>
+                    <div class="feature-item">Reset password when needed</div>
+                    <div class="feature-item">Update your profile anytime</div>
+                </div>
+
+                <p>To get started, please verify your email address by clicking the button below:</p>
+                <center>
+                    <a href="${verificationUrl}" class="button">Verify Email Address</a>
+                </center>
+
+                <p style="margin-top: 20px;"><strong>Note:</strong> This verification link will expire in 24 hours for security reasons.</p>
+
+                <div class="features">
+                    <h3>Security Tips:</h3>
+                    <div class="feature-item">Use a strong password</div>
+                    <div class="feature-item">Enable two-factor authentication</div>
+                    <div class="feature-item">Never share your login credentials</div>
+                </div>
+            </div>
+            <div class="footer">
+                <p>If you didn't create this account, please ignore this email or contact our support team.</p>
+                <div class="social-links">
+                    <a href="#">Twitter</a> |
+                    <a href="#">Facebook</a> |
+                    <a href="#">LinkedIn</a>
+                </div>
+                <p>© ${new Date().getFullYear()} Your App Name. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+
+    await sendEmail(user.email, "Welcome to Our Platform!", emailContent);
 
     log(`User registered successfully: ${email}`);
     return res.status(201).json({ message: "User registered successfully" });
@@ -186,8 +396,19 @@ const refreshToken = async (req, res) => {
 const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
+
+    // Include current device ID in response
+    const deviceId = req.deviceId;
+    const userProfile = {
+      ...user.toObject(),
+      currentDeviceId: deviceId,
+      // Filter active sessions to get only current session info
+      currentSession: user.activeSessions.find(
+        (session) => session.deviceId === deviceId
+      ),
+    };
+
     log("Profile fetched successfully");
-    const userProfile = user.toObject();
     return res.status(200).json(userProfile);
   } catch (err) {
     error(`Error fetching profile: ${err.message}`);
@@ -214,10 +435,78 @@ const forgotPassword = async (req, res) => {
     const resetToken = user.generateResetToken();
     await user.save();
 
-    const resetUrl = `${req.protocol}://${req.get(
-      "host"
-    )}/api/auth/reset-password/${resetToken}`;
-    const message = `You are receiving this email because you (or someone else) has requested the reset of a password. Please make a PUT request to: \n\n${resetUrl}`;
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    const message = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    .email-container {
+                        font-family: Arial, sans-serif;
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #f4f4f4;
+                    }
+                    .header {
+                        background-color: #007bff;
+                        color: white;
+                        padding: 20px;
+                        text-align: center;
+                        border-radius: 5px 5px 0 0;
+                    }
+                    .content {
+                        background-color: white;
+                        padding: 30px;
+                        border-radius: 0 0 5px 5px;
+                    }
+                    .button {
+                        display: inline-block;
+                        padding: 15px 25px;
+                        background-color: #007bff;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        margin-top: 20px;
+                        text-align: center;
+                    }
+                    .button a {
+                        color: white;
+                        text-decoration: none;
+                    }
+                    .footer {
+                        text-align: center;
+                        margin-top: 30px;
+                        color: #777;
+                        font-size: 12px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="email-container">
+                    <div class="header">
+                        <h1>Password Reset Request</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Hello,</h2>
+                        <p>We received a request to reset the password for your account.</p>
+                        <p>Click the button below to reset your password. This link will expire in 1 hour.</p>
+                        <center>
+                            <div class="button">
+                                <a href="${resetUrl}">Reset Password</a>
+                            </div>
+                        </center>
+                        <p>If you didn't request this password reset, please ignore this email or contact support if you have concerns.</p>
+                    </div>
+                    <div class="footer">
+                        <p>This is an automated message from Your App Name</p>
+                        <p>© ${new Date().getFullYear()} Your App Name. All rights reserved.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+    `;
 
     await sendEmail(user.email, "Password reset request", message);
 
@@ -284,21 +573,88 @@ const resendVerificationEmail = async (req, res) => {
     const verificationToken = user.generateVerificationToken();
     await user.save();
 
-    const verificationUrl = `${req.protocol}://${req.get(
-      "host"
-    )}/api/auth/verify-email/${verificationToken}`;
+    const verificationUrl = `${process.env.FRONTEND_URL}/verify-email/${verificationToken}`;
 
-    await sendEmail(
-      user.email,
-      "Email Verification",
-      `Please click on the link to verify your email: ${verificationUrl}`
-    );
+    const emailContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    .email-container {
+                        font-family: Arial, sans-serif;
+                        max-width: 600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                        background-color: #f4f4f4;
+                    }
+                    .header {
+                        background-color: #28a745;
+                        color: white;
+                        padding: 20px;
+                        text-align: center;
+                        border-radius: 5px 5px 0 0;
+                    }
+                    .content {
+                        background-color: white;
+                        padding: 30px;
+                        border-radius: 0 0 5px 5px;
+                    }
+                    .button {
+                        display: inline-block;
+                        padding: 15px 25px;
+                        background-color: #28a745;
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 5px;
+                        margin-top: 20px;
+                        text-align: center;
+                    }
+                    .button a {
+                        color: white;
+                        text-decoration: none;
+                    }
+                    .footer {
+                        text-align: center;
+                        margin-top: 30px;
+                        color: #777;
+                        font-size: 12px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="email-container">
+                    <div class="header">
+                        <h1>Verify Your Email Address</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Welcome!</h2>
+                        <p>Thank you for registering. To complete your registration and activate your account, please verify your email address.</p>
+                        <p>Click the button below to verify your email. For security reasons, this link will expire in 24 hours.</p>
+                        <center>
+                            <div class="button">
+                                <a href="${verificationUrl}">Verify Email Address</a>
+                            </div>
+                        </center>
+                        <p style="margin-top: 20px;">If you didn't create an account, please ignore this email or contact support if you have concerns.</p>
+                    </div>
+                    <div class="footer">
+                        <p>This is an automated message, please do not reply</p>
+                        <p>© ${new Date().getFullYear()} Your App Name. All rights reserved.</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+    `;
+
+    await sendEmail(user.email, "Email Verification", emailContent);
 
     log(`Verification email resent to: ${user.email}`);
     return res.status(200).json({ message: "Verification email resent" });
   } catch (err) {
     error(`Error resending verification email: ${err.message}`);
-    return res.status(500).json({ message: "Error resending verification email" });
+    return res
+      .status(500)
+      .json({ message: "Error resending verification email" });
   }
 };
 
@@ -306,7 +662,9 @@ const changePassword = async (req, res) => {
   try {
     const { error: validationError } = resetPasswordSchema.validate(req.body);
     if (validationError) {
-      return res.status(400).json({ message: validationError.details[0].message });
+      return res
+        .status(400)
+        .json({ message: validationError.details[0].message });
     }
 
     const user = await User.findById(req.user.id);
@@ -337,10 +695,21 @@ const updateProfile = async (req, res) => {
     const user = await User.findByIdAndUpdate(req.user.id, req.body, {
       new: true,
     }).select("-password");
+
     user.mre = req.body.email;
     await user.save();
+
+    // Include current device ID and session info in response
+    const deviceId = req.deviceId;
+    const userProfile = {
+      ...user.toObject(),
+      currentDeviceId: deviceId,
+      currentSession: user.activeSessions.find(
+        (session) => session.deviceId === deviceId
+      ),
+    };
+
     log(`Profile updated successfully: ${user.email}`);
-    const userProfile = user.toObject();
     return res.status(200).json(userProfile);
   } catch (err) {
     error(`Error updating profile: ${err.message}`);
@@ -354,16 +723,24 @@ const logout = async (req, res) => {
     const deviceId = req.deviceId;
 
     // Remove the specific session
-    user.activeSessions = user.activeSessions.filter(
-      session => session.deviceId !== deviceId
-    );
-    
+    if (Array.isArray(user.activeSessions)) {
+      user.activeSessions = user.activeSessions.filter(
+        (session) => session.deviceId !== deviceId
+      );
+    }
+
+    // Blacklist the token
+    const token = req.headers.authorization.split(" ")[1];
+    const decodedToken = jwt.verify(token, JWT_SECRET);
+    const expiresAt = new Date(decodedToken.exp * 1000);
+    await BlacklistedToken.create({ token, expiresAt });
+
     await user.save();
     log(`User logged out from device ${deviceId}: ${user.email}`);
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       message: "Successfully logged out from current device",
-      remainingSessions: user.activeSessions.length
+      remainingSessions: user.activeSessions.length,
     });
   } catch (err) {
     error(`Error logging out: ${err.message}`);
@@ -374,14 +751,28 @@ const logout = async (req, res) => {
 const logoutAll = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
+    if (!user) {
+      log(`User not found: ${req.user.id}`);
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Blacklist the token
+    const token = req.headers.authorization.split(" ")[1];
+    const expiresAt = new Date(Date.now() + 3600 * 1000); // Token expiry time (1 hour)
+    await BlacklistedToken.create({ token, expiresAt });
+
     user.activeSessions = [];
     await user.save();
-    
+
     log(`User logged out from all devices: ${user.email}`);
-    return res.status(200).json({ message: "Successfully logged out from all devices" });
+    return res
+      .status(200)
+      .json({ message: "Successfully logged out from all devices" });
   } catch (err) {
     error(`Error logging out from all devices: ${err.message}`);
-    return res.status(500).json({ message: "Error logging out from all devices" });
+    return res
+      .status(500)
+      .json({ message: "Error logging out from all devices" });
   }
 };
 
@@ -412,7 +803,9 @@ const socialLogin = async (req, res) => {
     await user.save();
 
     log(`User logged in via social login: ${user.email}`);
-    return res.status(200).json({ token, refreshToken, role: user.role, expiresIn: 3600 });
+    return res
+      .status(200)
+      .json({ token, refreshToken, role: user.role, expiresIn: 3600 });
   } catch (err) {
     error(`Error during social login: ${err.message}`);
     return res.status(500).json({ message: "Error during social login" });
