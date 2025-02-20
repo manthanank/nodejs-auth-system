@@ -13,7 +13,7 @@ const routes = require("./routes/auth.routes");
 const passport = require("passport");
 const errorHandler = require("./middlewares/errorHandler");
 const { log } = require("./utils/logger");
-const { swaggerUi, specs } = require("./config/swagger");
+const { swaggerUi, specs, swaggerOptions } = require("./config/swagger");
 const { NODE_ENV } = require("./config/env");
 
 dotenv.config();
@@ -61,7 +61,11 @@ connectDB();
 
 // Routes
 app.use("/api/auth", routes);
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
+app.use(
+  "/api-docs", 
+  swaggerUi.serve, 
+  swaggerUi.setup(specs, swaggerOptions)
+);
 
 // Root route - modify this
 app.get("/", (req, res) => {

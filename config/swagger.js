@@ -1,6 +1,9 @@
 const swaggerJsdoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
 
+// Custom CSS URL for Swagger UI
+const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.1.0/swagger-ui.min.css";
+
 const options = {
   definition: {
     openapi: "3.0.0",
@@ -11,27 +14,33 @@ const options = {
     },
     servers: [
       {
-        url: "http://localhost:5000",
-      },
+        url: process.env.BASE_URL || "http://localhost:5000",
+        description: "Authentication API Server"
+      }
     ],
     components: {
       securitySchemes: {
         bearerAuth: {
           type: "http",
           scheme: "bearer",
-          bearerFormat: "JWT",
-        },
-      },
-    },
-    security: [
-      {
-        bearerAuth: [],
-      },
-    ],
+          bearerFormat: "JWT"
+        }
+      }
+    }
   },
-  apis: ["./routes/*.js", "./controllers/*.js"], // Path to the API docs
+  apis: ["./routes/*.js"]
 };
 
 const specs = swaggerJsdoc(options);
 
-module.exports = { swaggerUi, specs };
+// Create setup options with custom CSS
+const swaggerOptions = {
+  customCssUrl: CSS_URL,
+  customSiteTitle: "Authentication API Documentation"
+};
+
+module.exports = { 
+  swaggerUi, 
+  specs,
+  swaggerOptions
+};
