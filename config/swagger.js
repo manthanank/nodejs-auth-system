@@ -1,15 +1,15 @@
 const swaggerJsdoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
 
-// Custom CSS URL for Swagger UI
-const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.1.0/swagger-ui.min.css";
+// Updated CDN URL with reliable MIME type delivery
+const CSS_URL = "https://unpkg.com/swagger-ui-dist@4.5.0/swagger-ui.css";
 
 const options = {
   definition: {
     openapi: "3.0.0",
     info: {
       title: "Node.js Authentication API",
-      version: "1.0.0",
+      version: "1.0.0", 
       description: "API documentation for the Node.js Authentication System",
     },
     servers: [
@@ -33,10 +33,13 @@ const options = {
 
 const specs = swaggerJsdoc(options);
 
-// Create setup options with custom CSS
 const swaggerOptions = {
   customCssUrl: CSS_URL,
-  customSiteTitle: "Authentication API Documentation"
+  customSiteTitle: "Authentication API Documentation",
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true
+  }
 };
 
 module.exports = { 
