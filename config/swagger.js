@@ -1,6 +1,8 @@
 const swaggerJsdoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
 
+const CSS_URL = "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.1.0/swagger-ui.min.css";
+
 const options = {
   definition: {
     openapi: "3.0.0",
@@ -31,6 +33,7 @@ const options = {
 const specs = swaggerJsdoc(options);
 
 const swaggerOptions = {
+  customCssUrl: CSS_URL,
   customSiteTitle: "Authentication API Documentation",
   swaggerOptions: {
     persistAuthorization: true,

@@ -62,22 +62,9 @@ connectDB();
 // Routes
 app.use("/api/auth", routes);
 app.use(
-  "/api-docs",
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        imgSrc: ["'self'", "data:", "https:"],
-      },
-    },
-  }),
-  swaggerUi.serve,
-  swaggerUi.setup(specs, {
-    ...swaggerOptions,
-    customCssUrl: "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css"
-  })
+  "/api-docs", 
+  swaggerUi.serve, 
+  swaggerUi.setup(specs, swaggerOptions)
 );
 
 // Root route - modify this
