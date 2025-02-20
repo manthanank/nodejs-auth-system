@@ -35,6 +35,7 @@ const specs = swaggerJsdoc(options);
 const swaggerOptions = {
   customCssUrl: CSS_URL,
   customSiteTitle: "Authentication API Documentation",
+  customCss: '.swagger-ui .opblock .opblock-summary-path-description-wrapper { align-items: center; display: flex; flex-wrap: wrap; gap: 0 10px; padding: 0 10px; width: 100%; }',
   swaggerOptions: {
     persistAuthorization: true,
     displayRequestDuration: true
