@@ -20,7 +20,7 @@ dotenv.config();
 const app = express();
 
 // Add appropriate security headers in production
-if (NODE_ENV === 'production') {
+if (NODE_ENV === "production") {
   app.use(helmet());
   app.use(compression());
 }
@@ -28,7 +28,7 @@ if (NODE_ENV === 'production') {
 // Middleware
 app.use(express.json());
 app.use(cors());
-app.use(morgan(NODE_ENV === 'development' ? 'dev' : 'combined'));
+app.use(morgan(NODE_ENV === "development" ? "dev" : "combined"));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(
@@ -37,10 +37,10 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: NODE_ENV === 'production',
+      secure: NODE_ENV === "production",
       httpOnly: true,
-      sameSite: 'strict'
-    }
+      sameSite: "strict",
+    },
   })
 );
 app.use(passport.initialize());
@@ -61,19 +61,11 @@ connectDB();
 
 // Routes
 app.use("/api/auth", routes);
-app.use(
-  "/api-docs", 
-  swaggerUi.serve, 
-  swaggerUi.setup(specs, swaggerOptions)
-);
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs, swaggerOptions));
 
 // Root route - modify this
 app.get("/", (req, res) => {
-  res.json({
-    message: "Welcome to the Authentication API",
-    version: "1.0.0",
-    documentation: "/api-docs"
-  });
+  res.send("Welcome to the API!");
 });
 
 // Add health check endpoint
@@ -85,7 +77,7 @@ app.get("/health", (req, res) => {
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route ${req.method} ${req.originalUrl} not found`
+    message: `Route ${req.method} ${req.originalUrl} not found`,
   });
 });
 
