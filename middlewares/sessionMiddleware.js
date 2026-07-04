@@ -1,10 +1,11 @@
 const User = require('../models/User');
 const BlacklistedToken = require('../models/BlacklistedToken');
+const { getAuthTokenFromRequest } = require('../utils/auth.util');
 
 const sessionMiddleware = async (req, res, next) => {
   try {
     // Check if token is blacklisted first
-    const token = req.headers.authorization?.split(" ")[1];
+    const token = req.authToken || getAuthTokenFromRequest(req);
     const isBlacklisted = await BlacklistedToken.findOne({ token });
     if (isBlacklisted) {
       return res.status(401).json({ 

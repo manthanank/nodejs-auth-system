@@ -5,6 +5,7 @@ const errorHandler = (err, req, res, next) => {
   res.status(err.status || 500).json({
     message: err.message || "Internal Server Error",
   });
+  next(err); // Add next() call to properly handle error middleware chain
 };
 
 module.exports = errorHandler;

@@ -6,36 +6,39 @@ A comprehensive authentication and session management system built with Node.js.
 
 - 🔐 **Authentication**
   - Email/Password Registration and Login
-  - OAuth2 Integration (Google, GitHub)
-  - JWT-based Authentication
+  - OAuth2 Integration (Google, GitHub) via Passport.js
+  - JWT-based Authentication with Token Blacklisting
   - Session Management across Multiple Devices
-  - Account Verification via Email
+  - Account Verification via Email with Custom HTML Templates
   - Password Reset/Recovery
 
 - 📱 **Device Management**
-  - Multi-device Login Support (up to 4 devices)
-  - Active Session Tracking
+  - Multi-device Login Support (max 4 concurrent devices)
+  - Real-time Session Tracking with Last Active Times
   - Force Logout from Specific Devices
-  - Device-specific Session Control
+  - Device-specific Session Control with User Agent Tracking
+  - Email Notifications for New Device Logins
 
 - 🛡️ **Security**
-  - Role-based Authorization
-  - Rate Limiting
+  - Role-based Authorization (user/admin roles)
+  - Rate Limiting via express-rate-limit
   - Password Hashing with Bcrypt
-  - Token Blacklisting
-  - Account Lockout after Failed Attempts
+  - Token Blacklisting for Logout
+  - Account Lockout after Failed Login Attempts
   - Secure Headers with Helmet
   - CORS Protection
+  - Input Validation with Joi
 
 ## Tech Stack
 
-- Node.js, Express.js
-- MongoDB with Mongoose
-- JWT, Passport.js
-- Bcrypt, Helmet, Express-rate-limit
-- Joi for validation
-- Nodemailer for emails
-- Swagger UI Express for API docs
+- Express.js with Node.js
+- MongoDB with Mongoose ODM
+- JWT & Passport.js Authentication
+- Bcrypt for Password Hashing
+- Helmet for Security Headers
+- Morgan for HTTP Logging
+- Nodemailer for Email Service
+- Swagger UI for API Documentation
 
 ## Setup
 
@@ -45,13 +48,13 @@ A comprehensive authentication and session management system built with Node.js.
     npm install
     ```
 
-2. Create a `.env` file using `.env.example` as template
+2. Create `.env` file from template:
 
     ```bash
     cp .env.example .env
     ```
 
-3. Start the development server:
+3. Start development server:
 
     ```bash
     npm run dev
@@ -59,7 +62,7 @@ A comprehensive authentication and session management system built with Node.js.
 
 ## API Documentation
 
-Access the Swagger documentation at: `http://localhost:5000/api-docs`
+Access Swagger UI docs at: `http://localhost:5000/api-docs`
 
 ## Environment Variables
 
@@ -67,38 +70,46 @@ Access the Swagger documentation at: `http://localhost:5000/api-docs`
 |----------|-------------|
 | PORT | Server port (default: 5000) |
 | NODE_ENV | Environment (development/production) |
+| BASE_URL | API base URL |
+| FRONTEND_URL | Frontend application URL |
 | MONGO_URI | MongoDB connection string |
 | JWT_SECRET | JWT signing secret |
 | SMTP_HOST | SMTP server host |
 | SMTP_PORT | SMTP server port |
+| SMTP_SERVICE | Email service (e.g. gmail) |
 | SMTP_MAIL | SMTP email address |
 | SMTP_APP_PASS | SMTP application password |
+| API_SECRET | Session secret key |
 | GITHUB_CLIENT_ID | GitHub OAuth client ID |
 | GITHUB_CLIENT_SECRET | GitHub OAuth client secret |
 | GOOGLE_CLIENT_ID | Google OAuth client ID |
 | GOOGLE_CLIENT_SECRET | Google OAuth client secret |
+| CALLBACK_URL | OAuth callback URL |
 
 ## API Routes
 
 ### Auth Routes
 
 - `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `POST /api/auth/logout` - Logout from current device
-- `POST /api/auth/logout-all` - Logout from all devices
+
+- `POST /api/auth/login` - Login user with device tracking
+- `POST /api/auth/logout` - Logout current device
+- `POST /api/auth/logout-all` - Logout all devices
 - `GET /api/auth/profile` - Get user profile
 - `PUT /api/auth/profile` - Update profile
 
-### Session Routes
+### Session Management
 
-- `GET /api/auth/sessions` - Get active sessions
-- `DELETE /api/auth/sessions/:deviceId` - Delete specific session
+- `GET /api/auth/sessions` - List active sessions
+- `DELETE /api/auth/sessions/:deviceId` - Remove session
+- `GET /api/auth/users/device/:deviceId` - Get users by device
 
 ### Password Management
 
-- `POST /api/auth/forgot-password` - Request password reset
+- `POST /api/auth/forgot-password` - Request reset
 - `PUT /api/auth/reset-password/:token` - Reset password
 - `PUT /api/auth/change-password` - Change password
+- `POST /api/auth/refresh-token` - Refresh JWT token
 
 ### Email Verification
 
@@ -112,4 +123,4 @@ Access the Swagger documentation at: `http://localhost:5000/api-docs`
 
 ## License
 
-This project is open source and available under the [MIT License](LICENSE).
+This project is open source under the MIT License.

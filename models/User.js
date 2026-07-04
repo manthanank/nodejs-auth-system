@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     resetPasswordToken: String,
     resetPasswordExpires: Date,
+    verificationTokenExpires: Date,
     role: {
       type: String,
       enum: ["user", "admin"],
@@ -58,13 +59,16 @@ userSchema.methods.generateVerificationToken = function () {
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
+  this.verificationTokenExpires = Date.now() + 24 * 60 * 60 * 1000;
   return verificationToken;
 };
 
 userSchema.methods.verifyToken = function (token) {
-  return this.verificationToken ===
-    crypto.createHash("sha256").update(token).digest("hex") &&
-    this.verificationTokenExpires > Date.now();
+  return (
+    this.verificationToken ===
+      crypto.createHash("sha256").update(token).digest("hex") &&
+    this.verificationTokenExpires > Date.now()
+  );
 };
 
 userSchema.methods.generateRefreshToken = function () {

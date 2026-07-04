@@ -13,6 +13,12 @@ const { v4: uuidv4 } = require("uuid");
 const BlacklistedToken = require("../models/BlacklistedToken");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../config/env");
+const {
+  clearAuthCookies,
+  getAuthTokenFromRequest,
+  getRefreshTokenFromRequest,
+  setAuthCookies,
+} = require("../utils/auth.util");
 
 const login = async (req, res) => {
   try {
@@ -23,8 +29,31 @@ const login = async (req, res) => {
         .json({ message: validationError.details[0].message });
     }
 
-    const { email, password } = req.body;
+    const { email, password } = req.body; // password is used in the comparePassword check
     const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    if (user.isLocked) {
+      return res.status(403).json({
+        message: "Account is locked due to multiple failed login attempts. Please try again later.",
+      });
+    }
+
+    // Verify password
+    const isMatch = await user.comparePassword(password); // password is used here
+    if (!isMatch) {
+      await user.incLoginAttempts();
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        message: "Please verify your email before logging in.",
+      });
+    }
 
     // Clean up expired sessions first
     if (Array.isArray(user.activeSessions)) {
@@ -86,6 +115,7 @@ const login = async (req, res) => {
     await user.save();
 
     const token = generateToken({ id: user._id }, "1h");
+    setAuthCookies(res, token, refreshToken);
 
     // Send login notification email
     const emailContent = `
@@ -181,10 +211,7 @@ const login = async (req, res) => {
 
     log(`User logged in successfully and notification sent: ${email}`);
     return res.status(200).json({
-      token,
-      refreshToken,
       role: user.role,
-      expiresIn: 3600,
       deviceId,
       activeSessions: user.activeSessions,
     });
@@ -351,6 +378,7 @@ const verifyEmail = async (req, res) => {
 
     const user = await User.findOne({
       verificationToken: hashedToken,
+      verificationTokenExpires: { $gt: Date.now() },
     });
 
     if (!user) {
@@ -359,6 +387,7 @@ const verifyEmail = async (req, res) => {
 
     user.isVerified = true;
     user.verificationToken = undefined;
+    user.verificationTokenExpires = undefined;
     await user.save();
 
     log(`Email verified successfully: ${user.email}`);
@@ -371,7 +400,11 @@ const verifyEmail = async (req, res) => {
 
 const refreshToken = async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = getRefreshTokenFromRequest(req);
+    if (!refreshToken) {
+      return res.status(400).json({ message: "Refresh token is missing" });
+    }
+
     const hashedToken = User.getResetPasswordHash(refreshToken);
 
     const user = await User.findOne({ refreshToken: hashedToken });
@@ -379,14 +412,12 @@ const refreshToken = async (req, res) => {
       return res.status(400).json({ message: "Invalid refresh token" });
     }
 
-    const newAuthToken = generateToken({ id: user._id }, "1h");
     const newRefreshToken = user.generateRefreshToken();
-    user.refreshToken = newRefreshToken; // Store the new refresh token
+    const newAuthToken = generateToken({ id: user._id }, "1h");
+    setAuthCookies(res, newAuthToken, newRefreshToken);
     await user.save();
 
-    return res
-      .status(200)
-      .json({ token: newAuthToken, refreshToken: newRefreshToken });
+    return res.status(200).json({ message: "Token refreshed successfully" });
   } catch (err) {
     error(`Error refreshing token: ${err.message}`);
     return res.status(500).json({ message: "Error refreshing token" });
@@ -513,12 +544,6 @@ const forgotPassword = async (req, res) => {
     log(`Password reset email sent to: ${email}`);
     return res.status(200).json({ message: "Email sent" });
   } catch (err) {
-    if (user) {
-      user.resetPasswordToken = undefined;
-      user.resetPasswordExpires = undefined;
-      await user.save();
-    }
-
     error(`Error sending password reset email: ${err.message}`);
     return res.status(500).json({ message: "Email could not be sent" });
   }
@@ -730,10 +755,14 @@ const logout = async (req, res) => {
     }
 
     // Blacklist the token
-    const token = req.headers.authorization.split(" ")[1];
+    const token = getAuthTokenFromRequest(req);
+    if (!token) {
+      return res.status(401).json({ message: "No token provided" });
+    }
     const decodedToken = jwt.verify(token, JWT_SECRET);
     const expiresAt = new Date(decodedToken.exp * 1000);
     await BlacklistedToken.create({ token, expiresAt });
+    clearAuthCookies(res);
 
     await user.save();
     log(`User logged out from device ${deviceId}: ${user.email}`);
@@ -757,9 +786,14 @@ const logoutAll = async (req, res) => {
     }
 
     // Blacklist the token
-    const token = req.headers.authorization.split(" ")[1];
-    const expiresAt = new Date(Date.now() + 3600 * 1000); // Token expiry time (1 hour)
+    const token = getAuthTokenFromRequest(req);
+    if (!token) {
+      return res.status(401).json({ message: "No token provided" });
+    }
+    const decodedToken = jwt.verify(token, JWT_SECRET);
+    const expiresAt = new Date(decodedToken.exp * 1000);
     await BlacklistedToken.create({ token, expiresAt });
+    clearAuthCookies(res);
 
     user.activeSessions = [];
     await user.save();
@@ -800,12 +834,13 @@ const socialLogin = async (req, res) => {
 
     const token = generateToken({ id: user._id }, "1h");
     const refreshToken = user.generateRefreshToken();
+    setAuthCookies(res, token, refreshToken);
     await user.save();
 
     log(`User logged in via social login: ${user.email}`);
     return res
       .status(200)
-      .json({ token, refreshToken, role: user.role, expiresIn: 3600 });
+      .json({ role: user.role });
   } catch (err) {
     error(`Error during social login: ${err.message}`);
     return res.status(500).json({ message: "Error during social login" });
